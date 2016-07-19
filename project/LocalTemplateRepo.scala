@@ -32,7 +32,7 @@ object LocalTemplateRepo {
     libraryDependencies += Dependencies.templateCache,
     // TODO - Allow debug version for testing?
     remoteTemplateCacheUri := "http://downloads.typesafe.com/typesafe-activator",
-    localTemplateCacheHash := "8a2285c306189290715965bc7fae4399d0d5c882",
+    localTemplateCacheHash := "8fcc3bbf938137b325871bf41ffd783d576d8878",
     latestTemplateCacheHash := downloadLatestTemplateCacheHash(remoteTemplateCacheUri.value, streams.value),
     checkTemplateCacheHash := {
       if (enableCheckTemplateCacheHash.value)

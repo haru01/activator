@@ -199,6 +199,15 @@ public class ActivatorProperties {
     return null;
   }
 
+  private static FilenameFilter activatorLauncherFilter() {
+    return new FilenameFilter() {
+      @Override
+      public boolean accept(File dir, String name) {
+        return name.startsWith("activator-launch-") && name.endsWith(".jar");
+      }
+    };
+  }
+
   // this class is a trick to get a lazy singleton
   private static class LauncherJarHolder {
     private static File doFindLauncherJar(String jarname, File home) {
@@ -206,18 +215,19 @@ public class ActivatorProperties {
       if (jar.exists()) {
         return jar;
       } else {
-        File[] matches = home.listFiles(new FilenameFilter() {
-          @Override
-          public boolean accept(File dir, String name) {
-            return name.startsWith("activator-launch-") && name.endsWith(".jar");
-          }
-        });
+        File[] matches = home.listFiles(activatorLauncherFilter());
         if (matches != null && matches.length > 0) {
           return matches[0];
         } else {
           // this really shouldn't happen, so go ahead and spam stderr
-          System.err.println("No activator-launch-*.jar in " + home);
-          return null;
+          File libexec = new File(home,"libexec");
+          File[] matchesLibexec = libexec.listFiles(activatorLauncherFilter());
+          if (matchesLibexec != null && matchesLibexec.length > 0) {
+            return matchesLibexec[0];
+          } else {
+            System.err.println("No activator-launch-*.jar in " + libexec);
+            return null;
+          }
         }
       }
     }

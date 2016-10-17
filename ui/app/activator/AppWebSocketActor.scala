@@ -20,8 +20,6 @@ class AppWebSocketActor(val config: AppConfig,
   val lookupTimeout: Timeout) extends WebSocketActor[JsValue] with ActorLogging {
   implicit val timeout = WebSocketActor.timeout
 
-  lazy val newRelicActor: ActorRef = context.actorOf(monitor.NewRelicActor.props(NewRelic.fromConfig(Play.current.configuration.underlying), defaultContext))
-
   override def onMessage(json: JsValue): Unit = {
     json match {
       case WebSocketActor.Ping(ping) => produce(WebSocketActor.Pong(ping.cookie))
@@ -30,7 +28,6 @@ class AppWebSocketActor(val config: AppConfig,
       case TypesafeComProxyUIActor.Inbound(req) =>
         context.actorOf(TypesafeComProxyUIActor.props(req, typesafeComActor, self))
       case SbtRequest(req) => handleSbtPayload(req.json)
-      case NewRelicRequest(m) => handleNewRelicRequest(m)
       case WriteTypesafeProperties(msg) =>
         AppWebSocketActor.bestEffortCreateTypesafeProperties(config.location, msg.subscriptionId)
       case _ => log.debug("unhandled message on web socket: {}", json)
@@ -102,47 +99,6 @@ class AppWebSocketActor(val config: AppConfig,
       case e: JsError =>
         log.debug(s"Could not parse $json to valid SbtPayload. Error is: $e")
         None
-    }
-  }
-
-  def handleNewRelicRequest(in: NewRelicRequest.Request): Unit = {
-    import monitor.NewRelicActor._
-    in match {
-      case x @ NewRelicRequest.Provision =>
-        val sink = context.actorOf(Props(new ProvisioningSink(ProvisioningSinkState(), log => new ProvisioningSinkUnderlying(log, produce))))
-        askNewRelic[monitor.NewRelicActor.InternalProvisioned](monitor.NewRelicActor.InternalProvision(sink), x,
-          f => s"Failed to provision New Relic: ${f.getMessage}")(_ => produce(toJson(x.response)))
-      case x @ NewRelicRequest.Available =>
-        askNewRelic[monitor.NewRelicActor.InternalAvailableResponse](monitor.NewRelicActor.InternalAvailable, x,
-          f => s"Failed New Relic availability check: ${f.getMessage}")(r => produce(toJson(x.response(r.result))))
-      case x @ NewRelicRequest.EnableProject(key, name) =>
-        askNewRelic[InternalProjectEnabled](monitor.NewRelicActor.InternalEnableProject(config.location, key, name), x,
-          f => s"Failed to enable project[${config.location}] for New Relic: ${f.getMessage}")(_ => produce(toJson(x.response)))
-      case x @ NewRelicRequest.IsProjectEnabled =>
-        askNewRelic[InternalIsProjectEnabledResult](monitor.NewRelicActor.InternalIsProjectEnabled(config.location), x,
-          f => s"Failed check if New Relic enabled: ${f.getMessage}")(r => produce(toJson(x.response(r.result))))
-      case x @ NewRelicRequest.Deprovision =>
-        askNewRelic[monitor.NewRelicActor.Deprovisioned.type](monitor.NewRelicActor.InternalDeprovision, x,
-          f => s"Failed New Relic deprovisioning: ${f.getMessage}")(r => produce(toJson(x.response)))
-      case x @ NewRelicRequest.IsSupportedJavaVersion =>
-        askNewRelic[InternalIsSupportedJavaVersionResult](monitor.NewRelicActor.InternalIsSupportedJavaVersion, x,
-          f => s"Failed checking for supported Java version: ${f.getMessage}")(r => produce(toJson(x.response(r.result, r.version))))
-      case x @ NewRelicRequest.GenerateFiles(location, info) =>
-        askNewRelic[monitor.NewRelicActor.InternalGenerateFilesResult](monitor.NewRelicActor.InternalGenerateFiles(location, config.location), x,
-          f => s"Failed generating NewRelic monitoring files: ${f.getMessage}")(r => produce(toJson(x.response)))
-    }
-  }
-
-  def askNewRelic[T <: monitor.NewRelicActor.InternalResponse](msg: monitor.NewRelicActor.InternalRequest, originalMsg: NewRelicRequest.Request, onFailure: Throwable => String)(body: T => Unit)(implicit tag: ClassTag[T]): Unit = {
-    newRelicActor.ask(msg).mapTo[monitor.NewRelicActor.InternalResponse].onComplete {
-      case Success(r: monitor.NewRelicActor.InternalErrorResponse) => produce(toJson(originalMsg.error(r.message)))
-      case Success(`tag`(r)) => body(r)
-      case Success(r: monitor.NewRelicActor.InternalResponse) =>
-        log.error(s"Unexpected response from request: $msg got: $r expected: ${tag.toString()}")
-      case Failure(f) =>
-        val errorMsg = onFailure(f)
-        log.error(f, errorMsg)
-        produce(toJson(originalMsg.error(errorMsg)))
     }
   }
 
@@ -229,62 +185,4 @@ object SbtPayload {
     (__ \ "type").read[String] and
     (__ \ "command").read[String] and
     (__ \ "executionId").readNullable[Long])(SbtPayload.apply _)
-}
-
-case class ProvisioningSinkState(progress: Int = 0)
-
-class ProvisioningSinkUnderlying(log: LoggingAdapter, produce: JsValue => Unit) {
-  import monitor.Provisioning._
-  def onMessage(state: ProvisioningSinkState, status: Status, sender: ActorRef, self: ActorRef, context: ActorContext): ProvisioningSinkState = status match {
-    case x @ Authenticating(diagnostics, url) =>
-      produce(toJson(x))
-      state
-    case x @ ProvisioningError(message, exception) =>
-      produce(toJson(x))
-      log.error(exception, message)
-      context stop self
-      state
-    case x @ Downloading(url) =>
-      produce(toJson(x))
-      state
-    case x @ Progress(Left(value)) =>
-      val p = state.progress
-      if ((value / 100000) != p) {
-        produce(toJson(x))
-        state.copy(progress = value / 100000)
-      } else state
-    case x @ Progress(Right(value)) =>
-      val p = state.progress
-      if ((value.toInt / 10) != p) {
-        produce(toJson(x))
-        state.copy(progress = value.toInt / 10)
-      } else state
-    case x @ DownloadComplete(url) =>
-      produce(toJson(x))
-      state
-    case x @ Validating =>
-      produce(toJson(x))
-      state
-    case x @ Extracting =>
-      produce(toJson(x))
-      state
-    case x @ Complete =>
-      produce(toJson(x))
-      context stop self
-      state
-  }
-}
-
-class ProvisioningSink(init: ProvisioningSinkState,
-  underlyingBuilder: LoggingAdapter => ProvisioningSinkUnderlying) extends Actor with ActorLogging {
-  val underlying = underlyingBuilder(log)
-  import monitor.Provisioning._
-  override def receive: Receive = {
-    var state = init
-
-    {
-      case x: Status =>
-        state = underlying.onMessage(state, x, sender, self, context)
-    }
-  }
 }

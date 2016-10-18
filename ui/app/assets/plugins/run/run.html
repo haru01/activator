@@ -44,22 +44,6 @@
           </dl>
         </li>
         <!-- /ko -->
-        <!-- ko if: monitoringSolutions.monitoringSolutions().length > 2 -->
-        <li>
-          <h4>Monitoring</h4>
-          <dl class="select dropdown">
-            <dt>
-              <span data-bind="text: monitoringSolutions.monitoringSolution()"></span>
-              <span class="arrows">
-                <svg data-bind="svg: '/assets/icons/arrows.svg'"/>
-              </span>
-            </dt>
-            <dd data-bind="foreach: monitoringSolutions.monitoringSolutions">
-              <a data-bind="text: $data, click: function(){ $root.monitoringSolutions.monitoringSolution($data) }"></a>
-            </dd>
-          </dl>
-        </li>
-        <!-- /ko -->
         <!-- ko if: displayPlayUrl() -->
         <li class="play-url">
           <a target="_blank" data-bind="href: playUrl, text: playUrl"></a>
@@ -72,11 +56,6 @@
         <a href="#run/system">Standard out</a>
         <span class="counter error" data-bind="text: sbt.events.errorCounters.run, visible: sbt.events.errorCounters.run()"></span>
       </li>
-      <!-- ko if: monitoringSolutions.newRelicActivated() -->
-      <li class="actors" data-bind="isActiveUrl: '#monitoring/newrelic'">
-        <a href="#monitoring/newrelic">Configure NewRelic</a>
-      </li>
-      <!-- /ko -->
     </ul>
 
   </nav>

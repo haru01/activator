@@ -45,7 +45,7 @@ set ACTIVATOR_HOME=%ACTIVATOR_HOME:~0,-1%
 echo ACTIVATOR_HOME=%ACTIVATOR_HOME%
 
 set ERROR_CODE=0
-set APP_VERSION=1.3.10
+set APP_VERSION=1.3.11
 set ACTIVATOR_LAUNCH_JAR=activator-launch-%APP_VERSION%.jar
 
 rem Detect if we were double clicked, although theoretically A user could
